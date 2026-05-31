@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WhatsApp API Explorer</title>
+    <script>
+      // GitHub Pages SPA redirect — preserve the path
+      var l = window.location;
+      var seg = l.pathname.slice(1).split('/');
+      var base = seg[0]; // 'WhatsAppAPIExplorer'
+      if (l.pathname !== '/' + base + '/') {
+        var redirect = l.protocol + '//' + l.hostname + (l.port ? ':' + l.port : '') +
+          '/' + base + '/?p=' + encodeURIComponent(l.pathname.slice(base.length + 2) + l.search) + l.hash;
+        history.replaceState(null, null, redirect);
+      }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/WhatsAppAPIExplorer/assets/index.js"></script>
+  </body>
+</html>
