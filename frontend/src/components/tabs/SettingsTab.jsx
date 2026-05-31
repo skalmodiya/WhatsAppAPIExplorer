@@ -1,9 +1,26 @@
-import { useState } from 'react'
-import { Eye, EyeOff, CheckCircle, XCircle, Trash2, RefreshCw } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { Eye, EyeOff, CheckCircle, XCircle, Trash2, RefreshCw, Loader2 } from 'lucide-react'
+import axios from 'axios'
 import { useSettings } from '../../contexts/SettingsContext'
 import { useConnection } from '../../contexts/ConnectionContext'
 import { PROVIDERS } from '../../constants'
-import { ErrorBanner } from '../shared/Helpers'
+
+const MODEL_PATHS = {
+  anthropic: '/anthropic/v1/models',
+  openai: '/openai/v1/models',
+  litellm: '/litellm/v1/models',
+  gemini: '/gemini/v1beta/models',
+}
+
+async function fetchModels(provider, proxyUrl, apiKey) {
+  const url = (proxyUrl || 'http://localhost:6655') + MODEL_PATHS[provider]
+  const headers = {}
+  if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`
+  if (provider === 'anthropic') headers['anthropic-version'] = '2023-06-01'
+  const res = await axios.get(url, { headers, timeout: 10000 })
+  if (provider === 'gemini') return (res.data.models || []).map(m => m.name.replace('models/', ''))
+  return (res.data.data || []).map(m => m.id)
+}
 
 function InputRow({ label, description, children }) {
   return (
@@ -17,7 +34,7 @@ function InputRow({ label, description, children }) {
   )
 }
 
-function SecretInput({ value, onChange, placeholder }) {
+function SecretInput({ value, onChange, placeholder, onBlur }) {
   const [show, setShow] = useState(false)
   return (
     <div className="flex gap-2">
@@ -25,6 +42,7 @@ function SecretInput({ value, onChange, placeholder }) {
         type={show ? 'text' : 'password'}
         value={value}
         onChange={e => onChange(e.target.value)}
+        onBlur={onBlur}
         placeholder={placeholder}
         className="flex-1 px-3 py-1.5 text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-green-500"
       />
@@ -65,6 +83,42 @@ export default function SettingsTab() {
   const [testResult, setTestResult] = useState(null)
   const [testing, setTesting] = useState(false)
   const [confirmClear, setConfirmClear] = useState(false)
+  const [models, setModels] = useState([])
+  const [modelsLoading, setModelsLoading] = useState(false)
+  const [modelsError, setModelsError] = useState(null)
+
+  const loadModels = useCallback(async (provider, proxyUrl, apiKey) => {
+    if (!apiKey || !proxyUrl) return
+    setModelsLoading(true)
+    setModelsError(null)
+    setModels([])
+    try {
+      const list = await fetchModels(provider, proxyUrl, apiKey)
+      setModels(list)
+      // Auto-select first model if current model isn't in the new list
+      if (list.length > 0 && !list.includes(aiModel)) {
+        setAiModel(list[0])
+      }
+    } catch (err) {
+      setModelsError(err.response?.data?.error?.message || err.message || 'Failed to fetch models')
+    } finally {
+      setModelsLoading(false)
+    }
+  }, [aiModel, setAiModel])
+
+  // Refresh models when provider changes (if key + url already set)
+  useEffect(() => {
+    if (aiApiKey && aiProxyUrl) {
+      loadModels(aiProvider, aiProxyUrl, aiApiKey)
+    }
+  }, [aiProvider]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Refresh models when API key is saved (on blur)
+  function handleApiKeyBlur() {
+    if (aiApiKey && aiProxyUrl) {
+      loadModels(aiProvider, aiProxyUrl, aiApiKey)
+    }
+  }
 
   async function testConnection() {
     setTesting(true)
@@ -139,7 +193,22 @@ export default function SettingsTab() {
             <TextInput value={aiProxyUrl} onChange={setAiProxyUrl} placeholder="http://localhost:6655" type="url" />
           </InputRow>
           <InputRow label="API Key" description="Forwarded as Bearer token">
-            <SecretInput value={aiApiKey} onChange={setAiApiKey} placeholder="sk-..." />
+            <div className="flex gap-2">
+              <SecretInput
+                value={aiApiKey}
+                onChange={setAiApiKey}
+                placeholder="sk-..."
+                onBlur={handleApiKeyBlur}
+              />
+              <button
+                onClick={() => loadModels(aiProvider, aiProxyUrl, aiApiKey)}
+                disabled={modelsLoading || !aiApiKey}
+                title="Fetch models"
+                className="p-1.5 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-40"
+              >
+                {modelsLoading ? <Loader2 size={15} className="animate-spin text-gray-400" /> : <RefreshCw size={15} className="text-gray-400" />}
+              </button>
+            </div>
           </InputRow>
           <InputRow label="Provider">
             <select
@@ -150,8 +219,23 @@ export default function SettingsTab() {
               {PROVIDERS.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
             </select>
           </InputRow>
-          <InputRow label="Model">
-            <TextInput value={aiModel} onChange={setAiModel} placeholder={PROVIDERS.find(p => p.id === aiProvider)?.defaultModel} />
+          <InputRow label="Model" description={modelsError ? `⚠ ${modelsError}` : models.length > 0 ? `${models.length} models loaded` : 'Enter API key to load models'}>
+            {models.length > 0 ? (
+              <select
+                value={aiModel}
+                onChange={e => setAiModel(e.target.value)}
+                className="w-full px-3 py-1.5 text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-green-500"
+              >
+                {models.map(m => <option key={m} value={m}>{m}</option>)}
+              </select>
+            ) : (
+              <input
+                value={aiModel}
+                onChange={e => setAiModel(e.target.value)}
+                placeholder={PROVIDERS.find(p => p.id === aiProvider)?.defaultModel}
+                className="w-full px-3 py-1.5 text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-green-500"
+              />
+            )}
           </InputRow>
         </div>
       </section>
