@@ -5,21 +5,14 @@ import { useSettings } from '../../contexts/SettingsContext'
 import { useConnection } from '../../contexts/ConnectionContext'
 import { PROVIDERS } from '../../constants'
 
-const MODEL_PATHS = {
-  anthropic: '/anthropic/v1/models',
-  openai: '/openai/v1/models',
-  litellm: '/litellm/v1/models',
-  gemini: '/gemini/v1beta/models',
-}
-
-async function fetchModels(provider, proxyUrl, apiKey) {
-  const url = (proxyUrl || 'http://localhost:6655') + MODEL_PATHS[provider]
+async function fetchModels(provider, backendUrl, aiApiKey, aiProxyUrl) {
+  // Route through the local backend to avoid CORS — backend proxies to the AI proxy server-side
+  const url = `${backendUrl}/api/ai/models/${provider}`
   const headers = {}
-  if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`
-  if (provider === 'anthropic') headers['anthropic-version'] = '2023-06-01'
+  if (aiApiKey) headers['X-AI-Key'] = aiApiKey
+  if (aiProxyUrl) headers['X-Proxy-Url'] = aiProxyUrl
   const res = await axios.get(url, { headers, timeout: 10000 })
-  if (provider === 'gemini') return (res.data.models || []).map(m => m.name.replace('models/', ''))
-  return (res.data.data || []).map(m => m.id)
+  return res.data.models || []
 }
 
 function InputRow({ label, description, children }) {
@@ -88,14 +81,13 @@ export default function SettingsTab() {
   const [modelsError, setModelsError] = useState(null)
 
   const loadModels = useCallback(async (provider, proxyUrl, apiKey) => {
-    if (!apiKey || !proxyUrl) return
+    if (!apiKey || !backendUrl) return
     setModelsLoading(true)
     setModelsError(null)
     setModels([])
     try {
-      const list = await fetchModels(provider, proxyUrl, apiKey)
+      const list = await fetchModels(provider, backendUrl, apiKey, proxyUrl)
       setModels(list)
-      // Auto-select first model if current model isn't in the new list
       if (list.length > 0 && !list.includes(aiModel)) {
         setAiModel(list[0])
       }
@@ -104,7 +96,7 @@ export default function SettingsTab() {
     } finally {
       setModelsLoading(false)
     }
-  }, [aiModel, setAiModel])
+  }, [aiModel, setAiModel, backendUrl])
 
   // Refresh models when provider changes (if key + url already set)
   useEffect(() => {
