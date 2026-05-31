@@ -1,12 +1,12 @@
 import { useState, useEffect, useRef } from 'react'
-import { Send, Bot, X, ChevronDown } from 'lucide-react'
+import { Send, Bot, X, ChevronDown, RefreshCw } from 'lucide-react'
+import axios from 'axios'
 import { useWhatsApp } from '../../contexts/WhatsAppContext'
 import { useSettings } from '../../contexts/SettingsContext'
 import { useBackendApi } from '../../hooks/useBackendApi'
 import { PROVIDERS } from '../../constants'
 import { formatTime } from '../../lib/formatters'
 import { EmptyState, LoadingSpinner } from '../shared/Helpers'
-import { CodeBlock } from '../shared/CodeBlock'
 
 function MessageBubble({ msg }) {
   const isOut = msg.direction === 'outbound'
@@ -28,6 +28,37 @@ function MessageBubble({ msg }) {
 }
 
 function BotConfigPanel({ onClose, provider, setProvider, model, setModel, systemPrompt, setSystemPrompt }) {
+  const { backendUrl, aiApiKey, aiProxyUrl } = useSettings()
+  const [models, setModels] = useState([])
+  const [modelsLoading, setModelsLoading] = useState(false)
+
+  async function loadModels(p) {
+    if (!aiApiKey || !backendUrl) return
+    setModelsLoading(true)
+    setModels([])
+    try {
+      const res = await axios.get(`${backendUrl}/api/ai/models/${p}`, {
+        headers: { 'X-AI-Key': aiApiKey, 'X-Proxy-Url': aiProxyUrl },
+        timeout: 10000
+      })
+      const list = res.data.models || []
+      setModels(list)
+      if (list.length > 0 && !list.includes(model)) setModel(list[0])
+    } catch {
+      setModels([])
+    } finally {
+      setModelsLoading(false)
+    }
+  }
+
+  // Load models on mount and when provider changes
+  useEffect(() => { loadModels(provider) }, [provider]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  function handleProviderChange(e) {
+    setProvider(e.target.value)
+    // useEffect will fire loadModels via provider dependency
+  }
+
   return (
     <div className="absolute right-0 top-0 bottom-0 w-72 bg-white dark:bg-gray-800 border-l border-gray-200 dark:border-gray-700 shadow-xl z-10 flex flex-col">
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700">
@@ -37,16 +68,32 @@ function BotConfigPanel({ onClose, provider, setProvider, model, setModel, syste
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         <div>
           <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Provider</label>
-          <select value={provider} onChange={e => setProvider(e.target.value)}
+          <select value={provider} onChange={handleProviderChange}
             className="w-full px-2 py-1.5 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700">
             {PROVIDERS.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
           </select>
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Model</label>
-          <input value={model} onChange={e => setModel(e.target.value)}
-            className="w-full px-2 py-1.5 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700"
-            placeholder="model name" />
+          <div className="flex items-center justify-between mb-1">
+            <label className="text-xs font-medium text-gray-600 dark:text-gray-400">Model</label>
+            <button onClick={() => loadModels(provider)} disabled={modelsLoading || !aiApiKey}
+              className="p-0.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-40" title="Refresh models">
+              <RefreshCw size={12} className={`text-gray-400 ${modelsLoading ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
+          {models.length > 0 ? (
+            <select value={model} onChange={e => setModel(e.target.value)}
+              className="w-full px-2 py-1.5 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700">
+              {models.map(m => <option key={m} value={m}>{m}</option>)}
+            </select>
+          ) : (
+            <div className="space-y-1">
+              <input value={model} onChange={e => setModel(e.target.value)}
+                className="w-full px-2 py-1.5 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700"
+                placeholder={modelsLoading ? 'Loading...' : 'Enter model name'} />
+              {!aiApiKey && <p className="text-xs text-gray-400">Set API key in Settings to load models</p>}
+            </div>
+          )}
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">System Prompt</label>
