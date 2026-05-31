@@ -90,7 +90,8 @@ export default function ChatbotTab() {
       })
       setTestReply(data.response || data.error || 'No response')
     } catch (err) {
-      setTestReply(`Error: ${err.message}`)
+      const msg = err.response?.data?.error || err.response?.data?.message || err.message
+      setTestReply(`Error: ${msg}`)
     } finally {
       setTesting(false)
     }
@@ -129,8 +130,8 @@ export default function ChatbotTab() {
         <div className="border-t border-gray-200 dark:border-gray-700 p-3 bg-white dark:bg-gray-800">
           <div className="text-xs text-gray-500 dark:text-gray-400 mb-2">Test AI Reply (simulates what the bot would say)</div>
           {testReply && (
-            <div className="mb-2 p-2 rounded-lg bg-green-50 dark:bg-green-900/30 text-sm text-green-800 dark:text-green-200 border border-green-200 dark:border-green-800">
-              <strong>AI:</strong> {testReply}
+            <div className={`mb-2 p-2 rounded-lg text-sm border ${testReply.startsWith('Error:') ? 'bg-red-50 dark:bg-red-900/30 text-red-800 dark:text-red-200 border-red-200 dark:border-red-800' : 'bg-green-50 dark:bg-green-900/30 text-green-800 dark:text-green-200 border-green-200 dark:border-green-800'}`}>
+              <strong>{testReply.startsWith('Error:') ? '⚠' : 'AI'}:</strong> {testReply.replace(/^Error: /, '')}
             </div>
           )}
           <div className="flex gap-2">

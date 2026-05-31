@@ -12,6 +12,14 @@ function getConfig(req) {
   }
 }
 
+function upstreamError(err) {
+  const status = err.response?.status || 500
+  const data = err.response?.data
+  // Extract the most useful message from the proxy's error shape
+  const message = data?.error?.errorMessage || data?.error?.message || data?.message || err.message
+  return { status, message, detail: data }
+}
+
 router.post('/api/ai/chat', async (req, res) => {
   const { messages, systemPrompt, stream: doStream } = req.body
   const cfg = getConfig(req)
@@ -26,7 +34,10 @@ router.post('/api/ai/chat', async (req, res) => {
       res.json({ response: text, raw })
     }
   } catch (err) {
-    if (!res.headersSent) res.status(500).json({ error: err.response?.data || err.message })
+    if (!res.headersSent) {
+      const { status, message, detail } = upstreamError(err)
+      res.status(status).json({ error: message, detail })
+    }
   }
 })
 
